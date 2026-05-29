@@ -6,9 +6,14 @@ It just walks your data candle by candle and calls whatever strategy
 function you hand it. This file should rarely change once it works -
 you build new ideas by writing new files in strategies/, not by
 editing this one.
+
+The engine works entirely in PIPS. It knows nothing about money,
+account currency, or position size - that conversion lives in the
+runner (run_backtest.py), so the engine stays clean and reusable.
 --------------------------------------------------------------------
 """
 import pandas as pd
+from backtest.results import max_drawdown   # absolute import, matches run_backtest.py
 
 
 def load_data(path):
@@ -48,6 +53,7 @@ def open_new_trade(signal, candle, pip, sl_pips, tp_pips):
         "entry_time": candle.get("time"),
         "sl": sl,
         "tp": tp,
+        "stop_pips": sl_pips,   # entry-to-stop distance; the runner needs this to size positions
         "closed": False,
     }
 
@@ -145,4 +151,7 @@ def summarize(trades):
         "total_pnl_pips": round(total_pnl, 1),
         "avg_pnl_pips": round(total_pnl / len(trades), 2),
         "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else float("inf"),
+        # Survivability number: biggest peak-to-trough drop on the equity curve.
+        # total_pnl tells you if an edge exists; this tells you if you'd survive to use it.
+        "max_drawdown_pips": round(max_drawdown(trades), 1),
     }
