@@ -117,7 +117,7 @@ def balance(client, account_id):
 
 def run_once(pair, *, strategy_fn=sma_signal, risk_pct=RISK_PCT,
              sl_pips=SL_PIPS, tp_pips=TP_PIPS, send=False, since=None,
-             client=None, account_id=None):
+             can_enter=True, halt_reason=None, client=None, account_id=None):
     """One decision for one pair. Returns a decision dict (always), having placed
     an order only if there was a signal, no existing position, and send=True.
 
@@ -148,6 +148,14 @@ def run_once(pair, *, strategy_fn=sma_signal, risk_pct=RISK_PCT,
     decision["signal"] = signal
     if signal not in ("BUY", "SELL"):
         decision["reason"] = "no cross on latest closed candle"
+        return decision
+
+    # Kill switch: a real signal exists, but new entries are blocked. Record it as
+    # a HALT (not a hold) so the journal distinguishes "no signal" from "signal we
+    # were forbidden to take" -- the latter is what you audit after a drawdown.
+    if not can_enter:
+        decision["action"] = "halted"
+        decision["reason"] = halt_reason or "entries blocked by kill switch"
         return decision
 
     # Double-entry guard: don't stack onto an existing position in this pair.

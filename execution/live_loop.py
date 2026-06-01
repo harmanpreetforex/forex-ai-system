@@ -41,8 +41,11 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import oandapyV20.endpoints.accounts as accounts
+
 from execution.signal_bridge import run_once
 from execution.oanda_order import _make_client, _account_id
+from risk.kill_switch import KillSwitch
 
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL = ROOT / "results" / "live_journal.csv"
@@ -129,14 +132,37 @@ def journal_append(decision, tick_utc):
 
 
 # ── one tick across all pairs ───────────────────────────────────────────────────
-def tick(client, account_id, last_seen, *, send=False):
+def _nav(client, account_id):
+    req = accounts.AccountSummary(account_id)
+    client.request(req)
+    return float(req.response["account"]["NAV"])
+
+
+def tick(client, account_id, last_seen, *, send=False, kill_switch=None):
     """Process one candle for every pair. Updates last_seen in place. Returns the
-    list of decisions (also journaled)."""
+    list of decisions (also journaled).
+
+    Kill switch is evaluated ONCE per tick on current NAV; if it blocks, every
+    pair's entry is gated off (can_enter=False) so a real signal is journaled as
+    a halt, never sent. If we can't even read NAV, we FAIL SAFE -> block entries."""
     tick_utc = datetime.now(timezone.utc)
+    can_enter, halt_reason = True, None
+    if kill_switch is not None:
+        ok_nav, nav = with_retries(lambda: _nav(client, account_id), label="NAV")
+        if ok_nav:
+            can_enter, halt_reason, m = kill_switch.check(nav)
+            if not can_enter:
+                print(f"  KILL SWITCH: entries blocked — {halt_reason} "
+                      f"(NAV {m['nav']:.0f})")
+        else:
+            can_enter, halt_reason = False, "NAV unavailable — failing safe (no entries)"
+            print(f"  KILL SWITCH: {halt_reason}")
+
     decisions = []
     for pair in PAIRS:
         ok, result = with_retries(
             lambda p=pair: run_once(p, send=send, since=last_seen.get(p),
+                                    can_enter=can_enter, halt_reason=halt_reason,
                                     client=client, account_id=account_id),
             label=pair,
         )
@@ -172,12 +198,13 @@ def main():
 
     client, account_id = _make_client(), _account_id()
     last_seen = {}
+    kill_switch = KillSwitch()
     mode = "SEND (practice)" if send else "DRY-RUN"
     print(f"Live loop: {mode} | pairs={','.join(PAIRS)} | H1 | journal -> {JOURNAL}")
 
     if once:
         print(f"\n[single tick {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}Z]")
-        tick(client, account_id, last_seen, send=send)
+        tick(client, account_id, last_seen, send=send, kill_switch=kill_switch)
         return
 
     try:
@@ -185,7 +212,7 @@ def main():
             if is_market_open():
                 stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
                 print(f"\n[tick {stamp}]")
-                tick(client, account_id, last_seen, send=send)
+                tick(client, account_id, last_seen, send=send, kill_switch=kill_switch)
             else:
                 print(f"[{datetime.now(timezone.utc):%a %H:%MZ}] market closed — idle")
             sleep_s = seconds_to_next_candle()
