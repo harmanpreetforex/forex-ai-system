@@ -4,14 +4,14 @@
 
 ## Current status
 - **Today's date:** 1 June 2026
-- **Current phase:** **Month 3 (AI Layer) — open and underway.** Classical-strategy exploration on raw H1 majors is exhausted with **no robust edge found**. Month 3 Session 1 (env + framing) is **done**: scikit-learn installed, labeling scheme + leak-free split discipline locked before any model touches the data.
+- **Current phase:** **Month 3 CLOSED (negative, honest) → Month 4 (Live Demo) opening.** The AI layer was given its disciplined attempt: the scikit-learn OHLC direction model failed the walk-forward bar (0/12, AUC ~0.50). The news-sentiment lever is **deliberately deferred, not abandoned** (rationale below). Pivoting to Month 4 — banking the system + skill stack as the real asset, exactly as the North Star framed it.
 - **Current week:** Risk tooling + honest-backtesting discipline are done. Week numbering has decoupled from the roadmap (calendar sessions ran ahead of phase days) — track by phase, not week, from here.
 - **Overall vibe / momentum:** Discipline holding, and that's the headline. The walk-forward (Day 9-deep) and now the session filter (Day 14) both **falsified** candidate edges for ~$0, *before* anything got stacked on top. Engineering and validation habits are strong. There is still **no confirmed edge** — that's an honest finding about the market, not a failure of the process.
 
 ## Right now
-- **Working on:** Month 3 Session 2 complete — first ML direction model fit and **falsified on the locked bar**. Logistic regression + depth-capped random forest, both routed through `backtest/engine.py` (15/15 bracket = label barriers, real spread). Result: **PF>1 in 0/12 fold×pair runs**, test AUC 0.49–0.53 (coin flip), for BOTH models. Confirmed it's edgelessness not a bug (deep RF memorizes train AUC 1.000, test 0.493). The scikit-learn OHLC-feature direction model is a **clean negative** — features inherited the raw-signal edgelessness. Shipping without it, per roadmap.
+- **Working on:** **Decision made (1 Jun): Month 3 closed negative; news-sentiment swing DEFERRED, not taken.** Rationale: it's the one idea that can't be falsified cheaply — judging it on the same walk-forward bar first requires building a leak-free, accurately-timestamped historical news dataset aligned to H1 candles (a project in itself, and news-timestamp look-ahead is a classic invisible edge-killer). The edge odds are structurally low (releases are priced in by colocated algos in ms; on H1 we'd be predicting post-news drift ≈ random), it costs ~$10–20/mo, and it inverts the "falsify for ~$0" discipline that made every prior finding trustworthy. The North Star already treats the system+skills as the real asset → a 24/5 live-demo system is the higher-value artifact. **Reconsider only if** the goal shifts to *learning LLM/API integration* for its own sake — then a strictly time-boxed (1–2 session), free-data-only, explicitly-exploratory attempt is fine; as an edge hunt it's the weakest swing on the board.
 - **Blocked by:** nothing.
-- **Next action (the one thing):** **Decision point — the only untried Month 3 lever is news-sentiment via the Claude/GPT API**, whose information is NOT derived from the same OHLC (so it doesn't inherit the edgelessness by the same argument). Requires Anthropic API setup (see "Accounts & access"). EITHER take that one swing, OR call Month 3 done-negative and bank the system+skill stack, moving to Month 4 (live-demo wiring) as the durable-asset play. Do NOT keep adding OHLC features to chase the 0/12 — that's the curve-fit trap. (Roadmap North Star always treated the system+skills as the real asset.)
+- **Next action (the one thing):** **Month 4 Session 1 — build the order-execution layer** (the one missing pipeline piece). Write `execution/oanda_order.py`: a single `place_market_order(pair, units, sl_pips, tp_pips)` that submits a market order with attached SL/TP to the OANDA practice account, isolated behind ONE function so the Month-5 MT5 port is cheap (Open question #3). Test it by placing + closing ONE tiny demo trade and reconciling the fill. Framing: Month 4's deliverable is **execution fidelity** (does live match backtest mechanics?), NOT profit — we have no edge, so we run the least-bad strategy purely to validate the live loop. See the Month 4 plan section below.
 
 ## Account & money snapshot
 - Personal account balance: _[$ — update]_
@@ -24,8 +24,8 @@
 - [x] GitHub repo (`forex-ai-system`)
 - [x] Dedicated Gmail / folder
 - [ ] TradingView free
-- [ ] Anthropic API (Month 3 — only needed for the news-sentiment piece; the scikit-learn direction model is local and needs no API)
-- [ ] VPS (Month 4, optional)
+- [ ] Anthropic API — was only for the news-sentiment piece, now **deferred** (see Month 3). Not needed for Month 4.
+- [ ] VPS (Month 4, optional — only once the local loop is proven; needed for true 24/5 uptime)
 
 ## Milestone checklist
 **Month 1 — Foundation**
@@ -37,15 +37,18 @@
 - [x] Walk-forward / out-of-sample tested (single 70/30 OOS Day 13; 4-window walk-forward Day 9-deep; session filter Day 14)
 - [x] **Edge investigation COMPLETE — conclusion: NO robust edge** on raw H1 majors. SMA crossover and RSI reversal both edgeless (Day 11); signal-exit improved in-sample but failed walk-forward (median PF 0.93, Day 9-deep); London/NY session filter did not rescue it and self-defeated validation by sample size (Day 14). This deliverable is **closed negative** — an honest result, not an open task.
 
-**Month 3 — AI Layer**  ← now current
+**Month 3 — AI Layer**  — CLOSED (negative, honest)
 - [x] scikit-learn direction model (feature-engineered from OHLC) — **CLOSED NEGATIVE (Session 2).** LogReg + random forest, 13 past-only features, triple-barrier label, judged on the same 4-window walk-forward. PF>1 in 0/12 fold×pair runs; test AUC ~0.50 (coin flip). Deep RF memorizes train (AUC 1.000) but test 0.493 → harness sound, signal genuinely absent OOS. Engineered features inherited the raw price+SMA edgelessness, exactly as the Session-1 reframing feared. Ship without it (roadmap rule). An honest market finding, caught for ~$0 by the discipline.
-- [ ] News sentiment via Claude/GPT API
-- [ ] **Honest reframing (read this):** the roadmap framed Month 3 as *beating a Month 2 baseline*. There is **no profitable baseline to beat** — raw price+SMA has no edge here. So the real question changes to: *can engineered features find an edge the raw signal could not?* That is a **harder, lower-odds** question, and features derived from the same OHLC may inherit the same edgelessness. Worth **one disciplined attempt** held to the same walk-forward bar. If it doesn't clear that bar, the honest conclusion is that H1 majors via this data don't offer a retail-accessible edge — and the banked value is the **system + skill stack**, exactly as the roadmap's North Star anticipated.
+- [~] News sentiment via Claude/GPT API — **DEFERRED (1 Jun), not abandoned.** It's the one lever that can't be tested cheaply (needs a leak-free timestamped historical-news dataset before it can even be judged; news-timestamp look-ahead is an invisible edge-killer), edge odds are structurally low for retail on H1, and it inverts the falsify-for-~$0 discipline. Revisit only as a deliberately time-boxed LLM-integration *learning* exercise, or if a Month 4+ finding makes a news filter clearly worth the data-build. Full rationale in "Right now" + session log.
+- [x] **Honest reframing (proven correct):** the roadmap framed Month 3 as *beating a Month 2 baseline*; there was no profitable baseline to beat, and the harder question — *can engineered features find an edge the raw signal could not?* — was answered NO. Same-source (OHLC) features inherited same-source edgelessness, now an OBSERVED result, not a worry. Banked value = the **system + skill stack**, exactly as the North Star anticipated.
 
-**Month 4 — Live Demo**
-- [ ] System runs 24/5 on demo
-- [ ] 30 days logged
-- [ ] Results within tolerance of backtest
+**Month 4 — Live Demo**  ← now current
+- [ ] Order-execution layer: `place_market_order()` on OANDA practice (market order + attached SL/TP), isolated behind ONE function (cheap MT5 port later)
+- [ ] Live trading loop: poll → signal → size (`risk/position_sizer`) → order → log, on an H1 cadence, with reconnect/retry + weekend-gap handling
+- [ ] Kill switch wired live (respect 02_Risk_Rules: daily/total drawdown caps)
+- [ ] Live trade journal (CSV) + a daily reconciliation vs backtest-expected fills
+- [ ] System runs 24/5 on demo, 30 days logged
+- [ ] Results within tolerance of backtest (the real deliverable: **execution fidelity**, not profit — there is no edge, so this validates the engineering, not the strategy)
 
 **Month 5 — Prop Challenge**
 - [ ] Challenge purchased
@@ -57,8 +60,27 @@
 - [ ] Profit split taken
 - [ ] Scaling plan / 2nd strategy
 
+## Month 4 plan — Live Demo (execution fidelity)
+
+**Framing (read first):** there is NO edge. Month 4 does **not** chase profit — it proves the *engineering*: that a signal computed locally turns into a correctly-sized, correctly-fed order on the OANDA practice account, survives 24/5 for 30 days, and that the realized fills/spread/slippage match what `backtest/engine.py` assumed. If live ≈ backtest, the system is trustworthy infrastructure (the asset). The strategy we run live is just the least-bad available one (signal-exit SMA), chosen to exercise the loop, not to make money.
+
+**What already exists:** OANDA connection (`src/day2`, `src/day3`), data pipeline, backtest engine (signal/SL/TP/signal-exit logic), position sizer (`risk/position_sizer.py`), risk rules (`02_Risk_Rules.md`). **The one missing piece is order execution + the live loop.**
+
+**Sessions (each small, testable, isolated):**
+1. **Order layer** — `execution/oanda_order.py`: `place_market_order(pair, units, sl_pips, tp_pips)` → OANDA market order with attached SL/TP (OANDA `OrderCreate`, units sign = direction). ONE function = the whole broker surface, so the Month-5 MT5 port swaps just this file (Open Q #3). Acceptance: place + close ONE 100-unit demo trade; print the fill, attached SL/TP, and reconcile requested vs filled price.
+2. **Signal→order bridge** — reuse the SAME `strategy_fn` the backtest uses on the latest closed H1 candle (no duplicate signal logic = no drift, the Day-12 lesson), size via `position_sizer` off live balance, route through the order layer. Dry-run mode (log the order, don't send) first.
+3. **Live loop** — run once per closed H1 candle: fetch latest candles → compute signal → size → order (or hold) → append to journal. Must handle: API disconnect/timeout (retry w/ backoff), market closed / weekend gap (skip, don't crash), duplicate-fire guard (one decision per candle), restart-safe (re-read open positions from OANDA, don't double-enter).
+4. **Kill switch + journal** — wire `02_Risk_Rules` drawdown caps to halt new entries when daily/total DD breached (prop rules: 5% daily / 10% total). Journal every action to CSV (timestamp, signal, units, fill, SL/TP, balance). 
+5. **Reconciliation** — daily script: compare live fills vs backtest-expected (spread actually paid, slippage, any missed/extra trades). This is the deliverable's evidence.
+6. **24/5 soak** — run continuously (local first; cheap VPS only once the loop is proven) for 30 days, then compare live vs backtest metrics within tolerance.
+
+**Risks to watch:** units-sign / direction bugs (place tiny first), timezone mismatch (candles UTC vs OANDA), partial fills, the practice API silently differing from live, and look-ahead sneaking in via acting on the still-forming candle (act only on COMPLETE candles — same rule the pipeline already enforces).
+
 ## Session log (newest at top)
 > One line per session: date — what I did — what I learned — what broke.
+
+Decision (1 Jun): **Closed Month 3 negative; DEFERRED the news-sentiment swing** rather than take it. Why skip: (1) it's the one idea that can't be falsified cheaply — to judge it honestly on the same 4-window walk-forward you must FIRST build a leak-free, accurately-timestamped 2yr historical-news dataset aligned to H1 candles; that's a big build before you learn anything, and news-timestamp look-ahead is a classic invisible bias that manufactures fake edges. (2) Structurally low odds: scheduled releases (NFP/CPI/rates) are priced in by colocated algos within ms — retail on H1 isn't trading the spike, it's predicting post-news drift ≈ random. (3) It costs ~$10–20/mo and inverts the "falsify for ~$0" discipline that made every prior negative trustworthy. (4) The North Star already treats system+skills as the asset, and a 24/5 live-demo system is the higher-value, more differentiated artifact than a second expensively-falsified edge. Reconsider only if the goal becomes learning LLM/API integration for its own sake (then: strictly time-boxed, free-data-only, labeled exploratory). → Pivot to Month 4 (live demo / execution fidelity). Cost of this decision: $0, and it avoided a likely multi-day data-plumbing detour.
+Lesson: "one disciplined attempt" presupposes the attempt is CHEAP to falsify. When an idea requires building expensive infrastructure just to test it, the honest move can be to NOT test it and say why — especially when its prior odds are low and its main bias mode (look-ahead via timestamps) is exactly the kind that fools you. Not every roadmap box must be ticked; the North Star (system+skills) is what's being optimized, not deliverable-completion.
 
 Month 3 · Session 2 (1 Jun): First ML direction model — **falsified on the locked bar, clean negative.** Fit logistic regression + depth-capped random forest (depth 4, min_leaf 50) on each walk-forward fold's TRAIN rows (StandardScaler fit on train only, inside a Pipeline → no scaling leakage), predicted P(up) on TEST rows, routed predicted-up as long-only BUY through backtest/engine.py with a 15/15 bracket (= label barriers) and real measured spread (1.6/1.9/1.7). RESULT: PF>1 in **0/12** fold×pair runs for BOTH models (median PF ~0.76–0.77, range 0.59–0.97). Test AUC **0.49–0.53 ≈ coin flip** everywhere; accuracy ≈ majority baseline, sometimes below. Spread math is the executioner: 15/15 with ~1.6 spread needs ~55% win rate, chosen-trade win rate sits at ~48–53%. Ran a train-vs-test AUC diagnostic to rule out a broken harness: deep RF **memorizes train AUC 1.000 but tests 0.493**, logreg train ~0.56→test ~0.50, forest train ~0.68→test ~0.50 — so the wiring is sound and the model CAN fit; there is simply no out-of-sample directional signal to generalize. CONCLUSION: engineered features from H1-majors OHLC carry no edge for this label — they inherited the raw price+SMA edgelessness (Days 9–14), exactly as the Session-1 honest reframing predicted. Shipped without it (roadmap: "if it doesn't beat baseline, ship without it"). Did NOT threshold-tune (pointless at AUC≈0.5 — no ranking ability), sweep the label, or pile on OHLC features to chase the 0/12. Cost ~$0 (local sklearn). Only untried Month 3 lever left = news-sentiment via Claude API (different info source, not the same OHLC).
 Lessons: (1) Test AUC≈0.50 with train AUC clearly >0.50 (and a deep model hitting 1.000) is the textbook fingerprint of NO edge + a WORKING harness — always run that train/test diagnostic before trusting a negative, so you don't mistake a bug for a market finding (or vice versa). (2) When AUC≈0.5 there is no ranking signal, so threshold/precision tuning cannot help — recognizing that stopped a curve-fit spiral cold. (3) The spread breakeven win rate (~55% here) is the real bar a classifier must clear, not 50% — a model can be "better than a coin flip" and still lose every fold. (4) Same-source features inheriting same-source edgelessness is now an OBSERVED result, not just a worry: the next genuine swing has to bring NEW information (news/sentiment), not re-encode OHLC.
@@ -87,9 +109,9 @@ Day 8: Position sizing + CAD account sim (risk-per-trade %, pip value × lot, si
 - _[YYYY-MM-DD] — set up project + files — ready to start Day 1_
 
 ## Open questions for Claude
-- **ML framing (next session):** with no profitable baseline to beat, the ML task is "find an edge, not enhance one." Decide up front what counts as success (must clear the same 4-window walk-forward, not just a single split) so we don't move the goalposts mid-stream the way Day 13 nearly let us.
-- **Labeling + split discipline:** lock the labeling scheme and a strictly chronological train/test split (no leakage across the boundary, warm indicators correctly) BEFORE training anything. This is where ML projects fool themselves.
-- **Month 5:** prop firms run MetaTrader, not OANDA — execution layer will need an MQL5 port or a Python-MT5 bridge; keep order code isolated behind one function now to make that cheap later.
+- **[RESOLVED] ML framing + split discipline:** success was locked up front (beat base rate AND clear the 4-window walk-forward) and held — no goalpost-moving. Leakage guards were asserted before any fit. Outcome: clean negative (Month 3, Session 2). The discipline worked exactly as intended.
+- **[ACTIVE — Month 4] Execution fidelity:** the open question is now whether LIVE fills match backtest assumptions (spread paid, slippage, fill price). Build the reconciliation step (Month 4 plan, session 5) so this gets a real answer, not a vibe.
+- **[ACTIVE — Month 5 prep] MT5 portability:** prop firms run MetaTrader, not OANDA — keep ALL broker calls behind the single `place_market_order()` so the Month-5 port swaps one file. Enforce this in Month 4 session 1, not later.
 
 ## Things that broke / lessons (the gold)
 
