@@ -10,11 +10,28 @@ editing this one.
 The engine works entirely in PIPS. It knows nothing about money,
 account currency, or position size - that conversion lives in the
 runner (run_backtest.py), so the engine stays clean and reusable.
+
+Day 9-deep+ : run_backtest() gained `allowed_entry_hours`, an OPTIONAL
+entry-hour filter (an execution constraint, parallel to spread/risk --
+NOT a strategy change). Entries are gated to the given UTC hours; exits
+are NEVER gated (you don't want the clock to trap an open position).
 --------------------------------------------------------------------
 """
 import pandas as pd
 from backtest.results import max_drawdown   # absolute import, matches run_backtest.py
 
+
+def _close(trade, exit_price, exit_time, pip, spread_pips, reason):
+    if trade["direction"] == "BUY":
+        pnl = (exit_price - trade["entry"]) / pip
+    else:
+        pnl = (trade["entry"] - exit_price) / pip
+    trade["exit"] = exit_price
+    trade["exit_time"] = exit_time
+    trade["pnl"] = pnl - spread_pips          # spread still nets out here
+    trade["exit_reason"] = reason             # "sl" | "tp" | "signal"
+    trade["closed"] = True
+    return trade
 
 def load_data(path):
     """Read the OHLC CSV from your Day 4 pipeline into a clean DataFrame."""
@@ -39,95 +56,106 @@ def get_pip(pair):
 
 
 def open_new_trade(signal, candle, pip, sl_pips, tp_pips):
-    """Open a trade at THIS candle's open (the candle AFTER the signal)."""
     entry = candle["open"]
     if signal == "BUY":
         sl = entry - sl_pips * pip
-        tp = entry + tp_pips * pip
-    else:  # SELL
+        tp = entry + tp_pips * pip if tp_pips is not None else None
+    else:
         sl = entry + sl_pips * pip
-        tp = entry - tp_pips * pip
-    return {
-        "direction": signal,
-        "entry": entry,
-        "entry_time": candle.get("time"),
-        "sl": sl,
-        "tp": tp,
-        "stop_pips": sl_pips,   # entry-to-stop distance; the runner needs this to size positions
-        "closed": False,
-    }
+        tp = entry - tp_pips * pip if tp_pips is not None else None
+    return {"direction": signal, "entry": entry, "entry_time": candle.get("time"),
+            "sl": sl, "tp": tp, "stop_pips": sl_pips, "closed": False}
+
 
 
 def check_exit(trade, candle, pip, spread_pips):
-    """Did this candle's high/low touch the stop loss or take profit?"""
     high, low = candle["high"], candle["low"]
     hit_sl = hit_tp = False
-
     if trade["direction"] == "BUY":
-        if low <= trade["sl"]:
-            hit_sl = True
-        if high >= trade["tp"]:
-            hit_tp = True
-    else:  # SELL
-        if high >= trade["sl"]:
-            hit_sl = True
-        if low <= trade["tp"]:
-            hit_tp = True
-
-    if not (hit_sl or hit_tp):
-        return trade  # still open, nothing to do
-
-    # If BOTH could have hit in the same candle we can't know the order,
-    # so we assume the stop loss hit first - the honest, pessimistic choice.
-    exit_price = trade["sl"] if hit_sl else trade["tp"]
-
-    if trade["direction"] == "BUY":
-        pnl = (exit_price - trade["entry"]) / pip
+        if low <= trade["sl"]: hit_sl = True
+        if trade["tp"] is not None and high >= trade["tp"]: hit_tp = True
     else:
-        pnl = (trade["entry"] - exit_price) / pip
-
-    trade["exit"] = exit_price
-    trade["exit_time"] = candle.get("time")
-    trade["pnl"] = pnl - spread_pips  # subtract the cost of entering the trade
-    trade["closed"] = True
+        if high >= trade["sl"]: hit_sl = True
+        if trade["tp"] is not None and low <= trade["tp"]: hit_tp = True
+    if not (hit_sl or hit_tp):
+        return trade
+    # both possible in one candle -> assume stop first (pessimistic, unchanged)
+    if hit_sl:
+        _close(trade, trade["sl"], candle.get("time"), pip, spread_pips, "sl")
+    else:
+        _close(trade, trade["tp"], candle.get("time"), pip, spread_pips, "tp")
     return trade
 
 
-def run_backtest(df, pair, strategy_fn, sl_pips=20, tp_pips=40, spread_pips=1.0):
+def run_backtest(df, pair, strategy_fn, sl_pips=20, tp_pips=40,
+                 spread_pips=1.0, signal_exit=False, allowed_entry_hours=None):
     """
-    The core loop. One pass through the data, candle by candle.
+    signal_exit=False -> original behaviour (exit only on SL/TP).
+    signal_exit=True  -> also exit when the strategy's desired direction flips
+                         opposite to the open trade. Exit fills at the NEXT
+                         candle's open (same no-lookahead rule as entries);
+                         the open is checked BEFORE that candle's high/low.
 
-    Two rules keep it honest:
-      1. A signal generated on candle i is entered on candle i+1's OPEN.
-         (Entering on the same candle that generated the signal = lookahead bias.)
-      2. Exits are checked against each candle's own high/low.
+    allowed_entry_hours -> None (default) = no filter, behaviour unchanged.
+                           A set of UTC hours (e.g. {12,13,14,15}) = only OPEN
+                           a trade when the entry candle's hour is in the set.
+                           EXITS are never filtered. PRECONDITION: candle
+                           timestamps must be UTC (verify your pipeline).
     """
     pip = get_pip(pair)
-    trades = []
-    open_trade = None
-    pending_signal = None
+    trades, open_trade = [], None
+    pending_signal, pending_exit = None, False
 
     for i in range(len(df)):
         candle = df.iloc[i]
 
-        # 1. Execute any entry that was decided on the PREVIOUS candle's close
+        # 1. fill pending ENTRY at this open -- gated by the entry-hour filter.
+        #    `candle` here IS the entry candle: the signal was set last iteration
+        #    (at candle i-1's close) and fills at THIS open, so we gate on THIS
+        #    candle's hour, not i+1's.
         if pending_signal and open_trade is None:
-            open_trade = open_new_trade(pending_signal, candle, pip, sl_pips, tp_pips)
+            entry_time = candle.get("time")
+            if allowed_entry_hours is not None and entry_time is None:
+                # Fail LOUD rather than silently letting every trade through --
+                # a filter that quietly does nothing is the dangerous kind of bug.
+                raise ValueError(
+                    "allowed_entry_hours is set but candles have no 'time' column; "
+                    "cannot filter by hour. Check load_data() / the source CSV."
+                )
+            in_window = (allowed_entry_hours is None
+                         or entry_time.hour in allowed_entry_hours)
+            if in_window:
+                open_trade = open_new_trade(pending_signal, candle, pip, sl_pips, tp_pips)
+            # Clear the pending signal EITHER WAY. A cross whose entry candle falls
+            # outside the window is DROPPED, not deferred. (If strategy_fn returns
+            # persistent STATE rather than a cross EVENT, step 4 will re-signal on the
+            # next candle and effectively defer entry to the next in-window candle --
+            # so the drop-vs-defer behaviour is set by your strategy file, not here.
+            # Worth a glance at sma_crossover.py to know which one you have.)
             pending_signal = None
 
-        # 2. Check whether the open trade hits SL/TP on THIS candle
+        # 2. fill pending SIGNAL-EXIT at this open (before the candle's high/low)
+        if open_trade and pending_exit:
+            _close(open_trade, candle["open"], candle.get("time"),
+                   pip, spread_pips, "signal")
+            trades.append(open_trade); open_trade = None; pending_exit = False
+
+        # 3. SL / TP against this candle
         if open_trade:
             open_trade = check_exit(open_trade, candle, pip, spread_pips)
             if open_trade["closed"]:
-                trades.append(open_trade)
-                open_trade = None
+                trades.append(open_trade); open_trade = None
 
-        # 3. Ask the strategy for a signal, using data UP TO this candle's close
-        if open_trade is None and pending_signal is None:
-            history = df.iloc[: i + 1]
-            signal = strategy_fn(history, pip)
-            if signal in ("BUY", "SELL"):
-                pending_signal = signal  # will be entered on the next candle's open
+        # 4. consult strategy on data up to this close
+        if signal_exit or (open_trade is None and pending_signal is None):
+            signal = strategy_fn(df.iloc[: i + 1], pip)
+            if open_trade is None and pending_signal is None:
+                if signal in ("BUY", "SELL"):
+                    pending_signal = signal               # enter next open
+            elif open_trade is not None and signal_exit and not pending_exit:
+                opposite = {"BUY": "SELL", "SELL": "BUY"}[open_trade["direction"]]
+                if signal == opposite:
+                    pending_exit = True
 
     return trades
 

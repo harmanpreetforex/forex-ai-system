@@ -219,3 +219,8 @@ __marimo__/
 .env
 .env
 .DS_Store
+
+__pycache__/
+results/
+data/*.csv
+data/*.png
