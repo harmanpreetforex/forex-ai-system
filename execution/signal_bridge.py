@@ -116,23 +116,36 @@ def balance(client, account_id):
 
 
 def run_once(pair, *, strategy_fn=sma_signal, risk_pct=RISK_PCT,
-             sl_pips=SL_PIPS, tp_pips=TP_PIPS, send=False,
+             sl_pips=SL_PIPS, tp_pips=TP_PIPS, send=False, since=None,
              client=None, account_id=None):
     """One decision for one pair. Returns a decision dict (always), having placed
     an order only if there was a signal, no existing position, and send=True.
 
-    The returned dict is the journal row the Session-3 loop will persist."""
+    `since` (a candle Timestamp) enforces one-decision-per-candle: if the latest
+    CLOSED candle is not newer than `since`, we short-circuit to a hold BEFORE any
+    sizing/order — so a re-run within the same hour (loop restart, clock wobble)
+    can't fire a second order off the same bar.
+
+    The returned dict is the journal row the Session-3 loop persists."""
     client = client or _make_client()
     account_id = account_id or _account_id()
 
     hist = latest_candles(pair, client)
     pip = pip_size(pair)
-    signal = strategy_fn(hist, pip)
     last_time = hist["time"].iloc[-1] if len(hist) else None
 
-    decision = {"pair": pair, "as_of": last_time, "signal": signal,
+    decision = {"pair": pair, "as_of": last_time, "signal": None,
                 "action": "hold", "units": 0, "reason": None, "fill": None}
 
+    if last_time is None:
+        decision["reason"] = "no closed candles returned"
+        return decision
+    if since is not None and last_time <= since:
+        decision["reason"] = "no new closed candle since last tick"
+        return decision
+
+    signal = strategy_fn(hist, pip)
+    decision["signal"] = signal
     if signal not in ("BUY", "SELL"):
         decision["reason"] = "no cross on latest closed candle"
         return decision
