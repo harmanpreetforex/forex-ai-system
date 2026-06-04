@@ -224,3 +224,6 @@ __pycache__/
 results/
 data/*.csv
 data/*.png
+
+# Generated daily basket data (trend-following research)
+data/basket_daily/
